@@ -5,8 +5,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from awesomeversion import AwesomeVersion
+
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
+    ATTR_COLOR_TEMP_KELVIN,
     ATTR_EFFECT,
     ATTR_RGB_COLOR,
     ATTR_RGBW_COLOR,
@@ -16,8 +19,18 @@ from homeassistant.components.light import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.util import color as color_util
 
-from .const import DEV_LED_PROFILE, DEV_PROFILE_RGB, DEV_PROFILE_RGBW
+from .const import (
+    DEV_LED_PROFILE,
+    DEV_MODEL,
+    DEV_PERMANENT_LIGHTS_PRODUCT_CODES,
+    DEV_PROFILE_RGB,
+    DEV_PROFILE_RGBW,
+    MIN_COLD_WHITE_VERSION,
+    TWINKLY_MAX_KELVIN,
+    TWINKLY_MIN_KELVIN,
+)
 from .coordinator import TwinklyConfigEntry, TwinklyCoordinator
 from .entity import TwinklyEntity
 
@@ -47,6 +60,10 @@ class TwinklyLight(TwinklyEntity, LightEntity):
         device_info = coordinator.data.device_info
         self._attr_unique_id = device_info["mac"]
 
+        supports_cold_white = AwesomeVersion(
+            coordinator.software_version
+        ) >= AwesomeVersion(MIN_COLD_WHITE_VERSION)
+
         if device_info.get(DEV_LED_PROFILE) == DEV_PROFILE_RGBW:
             self._attr_supported_color_modes = {ColorMode.RGBW}
             self._attr_color_mode = ColorMode.RGBW
@@ -58,6 +75,15 @@ class TwinklyLight(TwinklyEntity, LightEntity):
         else:
             self._attr_supported_color_modes = {ColorMode.BRIGHTNESS}
             self._attr_color_mode = ColorMode.BRIGHTNESS
+
+        if (
+            device_info.get(DEV_MODEL) in DEV_PERMANENT_LIGHTS_PRODUCT_CODES
+            and supports_cold_white
+        ):
+            self._attr_supported_color_modes.add(ColorMode.COLOR_TEMP)
+            self._attr_max_color_temp_kelvin = TWINKLY_MAX_KELVIN
+            self._attr_min_color_temp_kelvin = TWINKLY_MIN_KELVIN
+
         self.client = coordinator.client
         if coordinator.supports_effects:
             self._attr_supported_features = LightEntityFeature.EFFECT
@@ -92,6 +118,30 @@ class TwinklyLight(TwinklyEntity, LightEntity):
                 return
 
             await self.client.set_brightness(brightness)
+
+        if (
+            self.supported_color_modes
+            and ColorMode.RGBW in self.supported_color_modes
+            and ATTR_COLOR_TEMP_KELVIN in kwargs
+            and kwargs[ATTR_COLOR_TEMP_KELVIN] != self._attr_color_temp_kelvin
+        ):
+            await self.client.interview()
+
+            default_brightness = 255 if self.brightness is None else self.brightness
+            brightness = kwargs.get(ATTR_BRIGHTNESS, default_brightness)
+            color_temp = kwargs[ATTR_COLOR_TEMP_KELVIN]
+
+            r, g, b, cw, ww = color_util.color_temperature_to_rgbww(
+                color_temp,
+                brightness,
+                self.min_color_temp_kelvin,
+                self.max_color_temp_kelvin,
+            )
+
+            await self.client.set_static_colour((cw, ww, r, g, b))
+            await self.client.set_mode("color")
+            self.client.default_mode = "color"
+            self._attr_color_temp_kelvin = kwargs[ATTR_COLOR_TEMP_KELVIN]
 
         if (
             ATTR_RGBW_COLOR in kwargs

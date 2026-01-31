@@ -13,6 +13,7 @@ from ttls.client import TwinklyError
 
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
+    ATTR_COLOR_TEMP_KELVIN,
     ATTR_EFFECT,
     ATTR_RGB_COLOR,
     ATTR_RGBW_COLOR,
@@ -20,6 +21,10 @@ from homeassistant.components.light import (
     LightEntityFeature,
 )
 from homeassistant.components.twinkly import DOMAIN
+from homeassistant.components.twinkly.const import (
+    TWINKLY_MAX_KELVIN,
+    TWINKLY_MIN_KELVIN,
+)
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     ATTR_SUPPORTED_FEATURES,
@@ -31,6 +36,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.util import color as color_util
 
 from . import setup_integration
 from .const import TEST_MAC
@@ -169,6 +175,49 @@ async def test_turn_on_with_color_rgb(
 
     mock_twinkly_client.interview.assert_called_once_with()
     mock_twinkly_client.set_static_colour.assert_called_once_with((128, 64, 32))
+    mock_twinkly_client.set_mode.assert_called_once_with("color")
+    assert mock_twinkly_client.default_mode == "color"
+
+
+async def test_turn_on_with_color_temperature(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_twinkly_client: AsyncMock,
+) -> None:
+    """Test support of the light.turn_on service with a color temperature."""
+    mock_twinkly_client.is_on.return_value = False
+    mock_twinkly_client.get_details.return_value["led_profile"] = "RGBW"
+    mock_twinkly_client.get_details.return_value["product_code"] = "TWPL072STP"
+    mock_twinkly_client.get_firmware_version.return_value["version"] = "2.10.0"
+
+    await setup_integration(hass, mock_config_entry)
+    assert (
+        LightEntityFeature.EFFECT
+        & hass.states.get("light.tree_1").attributes[ATTR_SUPPORTED_FEATURES]
+    )
+
+    default_brightness = 255
+    color_temperature = 4400
+    r, g, b, cw, ww = color_util.color_temperature_to_rgbww(
+        color_temperature,
+        default_brightness,
+        TWINKLY_MIN_KELVIN,
+        TWINKLY_MAX_KELVIN,
+    )
+
+    await hass.services.async_call(
+        LIGHT_DOMAIN,
+        SERVICE_TURN_ON,
+        service_data={
+            ATTR_ENTITY_ID: "light.tree_1",
+            ATTR_BRIGHTNESS: default_brightness,
+            ATTR_COLOR_TEMP_KELVIN: color_temperature,
+        },
+        blocking=True,
+    )
+
+    mock_twinkly_client.interview.assert_called_once_with()
+    mock_twinkly_client.set_static_colour.assert_called_once_with((cw, ww, r, g, b))
     mock_twinkly_client.set_mode.assert_called_once_with("color")
     assert mock_twinkly_client.default_mode == "color"
 
