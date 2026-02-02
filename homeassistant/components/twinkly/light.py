@@ -127,13 +127,10 @@ class TwinklyLight(TwinklyEntity, LightEntity):
         ):
             await self.client.interview()
 
-            default_brightness = 255 if self.brightness is None else self.brightness
-            brightness = kwargs.get(ATTR_BRIGHTNESS, default_brightness)
             color_temp = kwargs[ATTR_COLOR_TEMP_KELVIN]
-
             r, g, b, cw, ww = color_util.color_temperature_to_rgbww(
                 color_temp,
-                brightness,
+                255,
                 self.min_color_temp_kelvin,
                 self.max_color_temp_kelvin,
             )

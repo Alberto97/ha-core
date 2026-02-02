@@ -196,11 +196,10 @@ async def test_turn_on_with_color_temperature(
         & hass.states.get("light.tree_1").attributes[ATTR_SUPPORTED_FEATURES]
     )
 
-    default_brightness = 255
     color_temperature = 4400
     r, g, b, cw, ww = color_util.color_temperature_to_rgbww(
         color_temperature,
-        default_brightness,
+        255,
         TWINKLY_MIN_KELVIN,
         TWINKLY_MAX_KELVIN,
     )
@@ -210,7 +209,6 @@ async def test_turn_on_with_color_temperature(
         SERVICE_TURN_ON,
         service_data={
             ATTR_ENTITY_ID: "light.tree_1",
-            ATTR_BRIGHTNESS: default_brightness,
             ATTR_COLOR_TEMP_KELVIN: color_temperature,
         },
         blocking=True,
